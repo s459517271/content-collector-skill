@@ -1,90 +1,134 @@
 #!/usr/bin/env python3
 """
-Content Extractor - 提取社交媒体内容
-支持：Twitter/X、即刻、微信公众号、通用网页
+Content Extractor - 检测平台并输出提取指引
+
+设计原则：
+- 不硬编码任何外部路径
+- 不直接调用其他 skill 的脚本（由 Agent 在运行时通过 skill 调用）
+- 只做：平台检测 + 输出推荐的 skill/tool 和提取方式
 """
 
 import sys
 import json
-import re
-import subprocess
 from urllib.parse import urlparse
 
-def detect_platform(url: str) -> str:
-    """检测链接来源平台"""
+
+# 平台域名 → 提取策略映射
+PLATFORM_RULES = {
+    'twitter': {
+        'domains': ['x.com', 'twitter.com', 'mobile.twitter.com'],
+        'label': 'X/Twitter',
+        'skill': 'x-tweet-fetcher',
+        'fallback_skills': [],
+        'note': '使用 x-tweet-fetcher skill 提取推文/文章内容',
+    },
+    'weixin': {
+        'domains': ['mp.weixin.qq.com'],
+        'label': '微信公众号',
+        'skill': 'defuddle',
+        'fallback_skills': ['baoyu-url-to-markdown'],
+        'note': '优先使用 defuddle 提取正文，fallback 到 baoyu-url-to-markdown',
+        'selectors': {
+            'title': '#activity-name, .rich_media_title',
+            'author': '#js_name, .profile_nickname',
+            'content': '#js_content, .rich_media_content',
+            'publish_time': '#publish_time, em#publish_time',
+        },
+    },
+    'jike': {
+        'domains': ['okjike.com', 'jike.cn', 'm.okjike.com', 'web.okjike.com'],
+        'label': '即刻',
+        'skill': 'defuddle',
+        'fallback_skills': ['baoyu-url-to-markdown'],
+        'note': '即刻网页版可能需要登录，优先 defuddle，fallback 到 baoyu-url-to-markdown',
+        'selectors': {
+            'author': 'meta[property="og:title"], .user-name',
+            'content': 'meta[property="og:description"], .content',
+            'time': 'time, .time',
+        },
+    },
+    'reddit': {
+        'domains': ['reddit.com', 'www.reddit.com', 'old.reddit.com'],
+        'label': 'Reddit',
+        'skill': 'defuddle',
+        'fallback_skills': ['baoyu-url-to-markdown'],
+        'note': 'Reddit 支持 JSON API（URL 末尾加 .json），也可用 defuddle',
+        'json_api': True,
+    },
+    'hackernews': {
+        'domains': ['news.ycombinator.com'],
+        'label': 'Hacker News',
+        'skill': 'defuddle',
+        'fallback_skills': [],
+        'note': 'HN 支持 Firebase API: https://hacker-news.firebaseio.com/v0/item/{id}.json',
+    },
+    'zhihu': {
+        'domains': ['zhihu.com', 'www.zhihu.com', 'zhuanlan.zhihu.com'],
+        'label': '知乎',
+        'skill': 'defuddle',
+        'fallback_skills': ['baoyu-url-to-markdown'],
+        'note': '知乎部分内容需要登录，使用 defuddle 或 baoyu-url-to-markdown',
+    },
+    'bilibili': {
+        'domains': ['bilibili.com', 'www.bilibili.com', 'b23.tv'],
+        'label': 'Bilibili',
+        'skill': 'defuddle',
+        'fallback_skills': ['baoyu-url-to-markdown'],
+        'note': '视频类内容仅能提取标题和描述',
+    },
+}
+
+
+def detect_platform(url: str) -> dict:
+    """
+    检测链接来源平台，返回平台信息和推荐的提取方式。
+    """
     domain = urlparse(url).netloc.lower()
-    
-    if any(x in domain for x in ['x.com', 'twitter.com']):
-        return 'twitter'
-    elif 'mp.weixin.qq.com' in domain:
-        return 'weixin'
-    elif any(x in domain for x in ['okjike.com', 'jike.cn']):
-        return 'jike'
-    elif 'reddit.com' in domain:
-        return 'reddit'
-    elif 'news.ycombinator.com' in domain:
-        return 'hackernews'
-    else:
-        return 'generic'
+    bare_domain = domain.lstrip('www.')
 
-def extract_twitter(url: str) -> dict:
-    """使用 x-tweet-fetcher 提取 Twitter 内容"""
-    try:
-        result = subprocess.run(
-            ['python3', '/root/.openclaw/workspace/skills/x-tweet-fetcher/scripts/fetch_tweet.py', 
-             '--url', url],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-        if result.returncode == 0:
-            data = json.loads(result.stdout)
-            tweet = data.get('tweet', {})
-            return {
-                'platform': 'X/Twitter',
-                'author': tweet.get('author', ''),
-                'username': tweet.get('screen_name', ''),
-                'content': tweet.get('text', ''),
-                'created_at': tweet.get('created_at', ''),
-                'stats': {
-                    'likes': tweet.get('likes', 0),
-                    'retweets': tweet.get('retweets', 0),
-                    'bookmarks': tweet.get('bookmarks', 0),
-                    'views': tweet.get('views', 0),
-                    'replies': tweet.get('replies_count', 0)
-                },
-                'url': url,
-                'is_article': tweet.get('is_article', False)
-            }
-    except Exception as e:
-        return {'error': f'Twitter extraction failed: {str(e)}'}
-    
-    return {'error': 'Failed to extract Twitter content'}
+    for platform_id, rule in PLATFORM_RULES.items():
+        for d in rule['domains']:
+            if d in domain or d in bare_domain:
+                return {
+                    'platform_id': platform_id,
+                    'platform_label': rule['label'],
+                    'url': url,
+                    'skill': rule['skill'],
+                    'fallback_skills': rule.get('fallback_skills', []),
+                    'note': rule['note'],
+                    'selectors': rule.get('selectors'),
+                    'json_api': rule.get('json_api', False),
+                }
 
-def extract_generic(url: str) -> dict:
-    """通用网页提取（使用 web_fetch）"""
-    # 返回基本结构，实际提取由 Agent 使用 web_fetch 完成
+    # 未知平台 → 通用提取
     return {
-        'platform': 'Web',
+        'platform_id': 'generic',
+        'platform_label': 'Web',
         'url': url,
-        'note': 'Use web_fetch tool to extract content'
+        'skill': 'defuddle',
+        'fallback_skills': ['baoyu-url-to-markdown'],
+        'note': '未知平台，使用 defuddle 通用提取，fallback 到 baoyu-url-to-markdown',
+        'selectors': None,
+        'json_api': False,
     }
+
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 extract_content.py --url <url>", file=sys.stderr)
+        print(json.dumps({
+            'error': 'Usage: python3 extract_content.py [--url] <url>',
+        }, ensure_ascii=False), file=sys.stderr)
         sys.exit(1)
-    
-    url = sys.argv[2] if sys.argv[1] == '--url' else sys.argv[1]
-    
-    platform = detect_platform(url)
-    
-    if platform == 'twitter':
-        result = extract_twitter(url)
+
+    # 兼容 --url <url> 和直接 <url> 两种调用方式
+    if sys.argv[1] == '--url' and len(sys.argv) >= 3:
+        url = sys.argv[2]
     else:
-        result = extract_generic(url)
-    
+        url = sys.argv[1]
+
+    result = detect_platform(url)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
 
 if __name__ == '__main__':
     main()

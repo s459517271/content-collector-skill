@@ -10,9 +10,6 @@ import os
 import re
 from datetime import datetime
 
-# 添加飞书工具路径
-sys.path.insert(0, '/root/.openclaw/workspace/skills/feishu-doc')
-
 def format_content_item(item: dict, index: int) -> str:
     """
     格式化单条内容为飞书文档格式
@@ -52,7 +49,7 @@ def format_content_item(item: dict, index: int) -> str:
         try:
             dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
             time_str = dt.strftime('%Y-%m-%d %H:%M')
-        except:
+        except (ValueError, TypeError):
             pass
     
     # 构建关键词标签
@@ -72,7 +69,7 @@ def format_content_item(item: dict, index: int) -> str:
 | **互动数据** | {stats_str} |
 
 **原文内容**：
-> {content[:500]}{'...' if len(content) > 500 else ''}
+> {content}
 
 **AI 摘要**：
 {summary if summary else '（待生成）'}

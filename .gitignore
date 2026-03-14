@@ -1,0 +1,19 @@
+# 本地缓存（去重记录等，环境相关）
+.cache/
+
+# 本地配置（飞书 Token、文档 ID 等）
+.env
+config.local.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

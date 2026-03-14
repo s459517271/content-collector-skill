@@ -1,67 +1,163 @@
 ---
 name: content-collector
-description: "自动收集社交媒体内容（X/Twitter、即刻、公众号等）并整理成结构化笔记存入飞书文档。当用户发送链接或截图时使用此技能。支持每日定时提醒查看收藏内容。"
-version: "1.1.0"
+description: "自动收集社交媒体内容（X/Twitter、即刻、公众号、Reddit 等）并整理成结构化笔记存入飞书文档。当用户发送链接或截图时使用此技能。"
+version: "1.2.0"
 ---
 
 # Content Collector - 社交内容收藏助手
 
-自动收集社交媒体精彩内容，AI 整理后存入飞书文档，每日定时提醒查看。
+自动收集社交媒体精彩内容，AI 整理后存入飞书文档。
 
 ## 触发条件
 
 当用户发送以下内容时自动触发：
-- **链接**：X/Twitter、即刻、微信公众号、论坛帖子等
-- **图片**：截图（自动 OCR 识别）
+- **链接**：X/Twitter、即刻、微信公众号、Reddit、知乎、Bilibili、Hacker News 等
+- **图片**：截图（OCR 识别后提取链接）
 - **混合**：链接 + 截图
+
+## 依赖的 Skill
+
+> **重要**：本 skill 不直接调用外部脚本或路径，而是输出指引，由 Agent 在运行时调用对应 skill。
+> 以下是当前环境中实际使用的 skill，请确保已安装。
+
+### 必需 Skill
+
+| Skill | 用途 | 安装位置 |
+|:---|:---|:---|
+| **feishu-doc** | 读写飞书文档（追加内容、读取已有内容做去重） | `~/.agents/skills/feishu-doc*` |
+| **defuddle** | 通用网页正文提取（微信公众号、即刻、Reddit、知乎等） | `~/.opencode/skills/defuddle/` |
+
+### 推荐 Skill（按平台）
+
+| Skill | 用途 | 安装位置 |
+|:---|:---|:---|
+| **x-tweet-fetcher** | X/Twitter 推文、文章、时间线提取（零依赖 FxTwitter API） | `~/.opencode/skills/x-tweet-fetcher/` |
+| **baoyu-url-to-markdown** | 通用 URL 转 Markdown（fallback 方案） | `~/.opencode/skills/baoyu-url-to-markdown/` |
+
+### 可选 Skill
+
+| Skill | 用途 |
+|:---|:---|
+| **feishu-cron-reminder** | 每日定时提醒查看收藏内容 |
+| **feishu-send-file** | 将收藏导出文件发送到飞书群 |
+
+### 可选本地依赖
+
+| 依赖 | 用途 | 安装方式 |
+|:---|:---|:---|
+| pytesseract + pillow | 本地图片 OCR | `pip install pytesseract pillow` |
+| tesseract-ocr | OCR 引擎 | macOS: `brew install tesseract`; Linux: `apt-get install tesseract-ocr tesseract-ocr-chi-sim` |
 
 ## 工作流程
 
 ```
-用户发送链接/图片 → 检查去重 → 爬取内容 → AI 整理 → 存入飞书 → 每日提醒
+用户发送链接/图片
+  → 平台检测 (extract_content.py)
+  → 去重检查 (deduplicate.py)
+  → Agent 调用对应 skill 提取内容
+  → AI 整理成结构化格式
+  → 格式化 (append_to_feishu.py)
+  → Agent 调用 feishu-doc 追加到文档
 ```
 
-### Step 1: 去重检查
+### Step 1: 平台检测
 
-**检查方式**：
-1. **本地缓存**：检查 `.cache/collected_urls.json`
-2. **文档检查**：检查飞书文档中是否已存在该链接
-3. **URL 标准化**：去除追踪参数（utm_source、fbclid 等）
+运行 `extract_content.py` 检测链接来源，获取推荐的 skill 和提取方式：
 
-**脚本**：
 ```bash
-python3 scripts/deduplicate.py "<url>" [doc_content_file]
+python3 scripts/extract_content.py "https://x.com/user/status/123"
 ```
 
-### Step 2: 内容提取
+输出示例：
+```json
+{
+  "platform_id": "twitter",
+  "platform_label": "X/Twitter",
+  "url": "https://x.com/user/status/123",
+  "skill": "x-tweet-fetcher",
+  "fallback_skills": [],
+  "note": "使用 x-tweet-fetcher skill 提取推文/文章内容"
+}
+```
 
-**检测链接类型**：
-- `x.com` / `twitter.com` → 使用 x-tweet-fetcher
-- `mp.weixin.qq.com` → scripts/extract_weixin.py
-- `m.okjike.com` / `web.okjike.com` → scripts/extract_jike.py
-- `reddit.com` → scripts/extract_reddit.py
-- 其他 → 通用 web_fetch
+**支持的平台映射**：
 
-**检测图片**：
-- OCR 识别文字内容 → scripts/ocr_image.py
-- 提取其中的链接
+| 平台 | 域名 | 首选 Skill | Fallback |
+|:---|:---|:---|:---|
+| X/Twitter | x.com, twitter.com | x-tweet-fetcher | — |
+| 微信公众号 | mp.weixin.qq.com | defuddle | baoyu-url-to-markdown |
+| 即刻 | okjike.com, jike.cn | defuddle | baoyu-url-to-markdown |
+| Reddit | reddit.com | defuddle | baoyu-url-to-markdown |
+| Hacker News | news.ycombinator.com | defuddle | — |
+| 知乎 | zhihu.com | defuddle | baoyu-url-to-markdown |
+| Bilibili | bilibili.com, b23.tv | defuddle | baoyu-url-to-markdown |
+| 其他 | * | defuddle | baoyu-url-to-markdown |
 
-### Step 3: 内容整理
+### Step 2: 去重检查
 
-**结构化信息**：
+```bash
+python3 scripts/deduplicate.py "https://x.com/user/status/123"
+```
+
+检查方式：
+1. **本地缓存**：`.cache/collected_urls.json`
+2. **文档检查**：传入飞书文档内容文件做匹配
+3. **URL 标准化**：自动去除 utm_source、fbclid 等追踪参数
+
+### Step 3: 内容提取
+
+Agent 根据 Step 1 的输出，调用对应 skill 提取内容。例如：
+
+- **X/Twitter**：调用 `x-tweet-fetcher` skill
+- **微信公众号**：调用 `defuddle` skill
+- **其他平台**：调用 `defuddle` 或 `baoyu-url-to-markdown` skill
+
+> Agent 负责调用 skill，本 skill 的脚本只做检测和格式化，不直接调用外部 skill。
+
+**平台特殊提示**（内嵌在 extract_content.py 的 selectors 字段中）：
+
+- **微信公众号** CSS selectors：`#activity-name`（标题）、`#js_name`（作者）、`#js_content`（正文）、`#publish_time`（时间）
+- **即刻** CSS selectors：`meta[property="og:title"]`（作者）、`meta[property="og:description"]`（内容）、`time`（时间）
+- **Reddit**：支持 JSON API，在 URL 末尾加 `.json` 获取结构化数据
+
+### Step 4: AI 整理
+
+提取到原始内容后，AI 整理为结构化信息：
+
 - 原文内容（完整保留）
 - AI 摘要（3-5 句话）
 - 作者/来源
 - 发布时间
-- 互动数据（点赞/转发/评论）
+- 互动数据（点赞/转发/评论/浏览）
 - 关键词标签
 - 收藏理由
 
-### Step 4: 存入飞书
+### Step 5: 格式化 & 存入飞书
 
-**文档位置**：`社交内容收藏 - 每日精选`
+```bash
+python3 scripts/append_to_feishu.py '<json_content>'
+```
 
-**格式**：
+输入 JSON 格式：
+```json
+{
+  "platform": "X/Twitter",
+  "author": "作者名",
+  "title": "标题",
+  "content": "原文内容...",
+  "url": "https://...",
+  "created_at": "2026-03-14T10:00:00",
+  "summary": "AI 摘要",
+  "keywords": ["关键词1", "关键词2"],
+  "reason": "收藏理由",
+  "stats": {"likes": 100, "retweets": 50, "bookmarks": 30, "views": 10000}
+}
+```
+
+输出为格式化的 Markdown，供 Agent 调用 feishu-doc 的 append 操作写入文档。
+
+**文档格式**：
+
 ```markdown
 ### {序号}. {标题}
 
@@ -74,7 +170,7 @@ python3 scripts/deduplicate.py "<url>" [doc_content_file]
 | **互动数据** | 👍 {likes} | 🔄 {retweets} | 💾 {bookmarks} | 👁️ {views} |
 
 **原文内容**：
-> {原文}
+> {原文内容}
 
 **AI 摘要**：
 {摘要}
@@ -87,90 +183,32 @@ python3 scripts/deduplicate.py "<url>" [doc_content_file]
 ---
 ```
 
-### Step 5: 每日提醒
+### Step 6: 图片 OCR（可选）
 
-**时间**：每天 18:00
-**内容**：
-- 当日收藏数量
-- 内容标题列表
-- 飞书文档链接
-- 建议阅读提示
-
-## 脚本使用
-
-### 去重检查
-
-```bash
-python3 scripts/deduplicate.py "https://x.com/..."
-```
-
-### 提取 Twitter/X 内容
-
-```bash
-python3 scripts/extract_content.py --url "https://x.com/..."
-```
-
-### 提取即刻内容
-
-```bash
-python3 scripts/extract_jike.py "https://m.okjike.com/..."
-```
-
-### 提取公众号内容
-
-```bash
-python3 scripts/extract_weixin.py "https://mp.weixin.qq.com/..."
-```
-
-### 提取 Reddit 内容
-
-```bash
-python3 scripts/extract_reddit.py "https://reddit.com/r/..."
-```
-
-### 图片 OCR 识别
+当用户发送截图而非链接时：
 
 ```bash
 python3 scripts/ocr_image.py /path/to/image.png
 ```
 
-### 格式化并追加到飞书
+- 如果本地安装了 pytesseract → 直接 OCR 识别
+- 否则 → 返回图片路径，提示 Agent 使用外部 OCR 服务
+- 识别后自动提取文本中的 URL，回到 Step 1
 
-```bash
-python3 scripts/append_to_feishu.py '<json_content>'
-```
+## 脚本清单
 
-## 配置
-
-**飞书文档 Token**：首次使用时创建文档，后续追加到同一文档
-
-**Cron 任务**：自动创建每日 18:00 提醒
-```bash
-openclaw cron create \
-  --name "daily-content-reminder" \
-  --cron "0 18 * * *" \
-  --message "📚 今日内容收藏提醒..." \
-  --channel feishu
-```
-
-## 支持的来源
-
-| 平台 | 支持程度 | 备注 |
+| 脚本 | 用途 | 是否直接可用 |
 |:---|:---|:---|
-| X/Twitter | ✅ 完整 | 使用 x-tweet-fetcher |
-| 即刻 | ✅ 完整 | scripts/extract_jike.py |
-| 微信公众号 | ✅ 完整 | scripts/extract_weixin.py |
-| Reddit | ✅ 完整 | scripts/extract_reddit.py + JSON API |
-| Hacker News | ✅ 完整 | 使用 hn-api |
-| 知乎 | ⚠️ 部分 | web_fetch |
-| Bilibili | ⚠️ 部分 | web_fetch |
-| 其他论坛 | ⚠️ 部分 | 视具体情况 |
+| `scripts/extract_content.py` | 平台检测 + skill 路由 | ✅ 独立运行 |
+| `scripts/deduplicate.py` | URL 去重（本地缓存 + 文档匹配） | ✅ 独立运行 |
+| `scripts/append_to_feishu.py` | 内容格式化为飞书 Markdown | ✅ 独立运行 |
+| `scripts/ocr_image.py` | 图片 OCR（需 pytesseract 或外部服务） | ⚠️ 需可选依赖 |
 
 ## 去重机制
 
 ### URL 标准化
 
-去除以下追踪参数：
+自动去除以下追踪参数：
 - `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`
 - `fbclid`, `gclid`
 - `ref`, `source`
@@ -188,34 +226,22 @@ openclaw cron create \
 }
 ```
 
-## OCR 支持
+## 配置
 
-### 本地 OCR（可选）
+**飞书文档 Token**：首次使用时创建文档，后续追加到同一文档。
+文档标题建议：`社交内容收藏 - 每日精选`
 
-```bash
-# 安装依赖
-pip install pytesseract pillow
-apt-get install tesseract-ocr tesseract-ocr-chi-sim
-```
-
-### 云端 OCR
-
-- 腾讯云数据万象 CI OCR
-- 飞书内置 OCR
-
-## 输出示例
-
-见 `references/example-output.md`
-
-## 依赖
-
-- Python 3.8+
-- x-tweet-fetcher skill
-- feishu-doc skill
-- web_fetch tool
-- pytesseract (可选，用于本地 OCR)
+**每日提醒**（可选，需 feishu-cron-reminder skill）：
+每天 18:00 推送当日收藏数量、标题列表和文档链接。
 
 ## 更新日志
+
+### v1.2.0 (2026-03-14)
+- 🔧 移除所有硬编码路径，适配多环境部署
+- 🔧 重写 extract_content.py 为平台检测 + skill 路由模式
+- 🔧 删除空壳提取脚本（extract_jike/weixin/reddit.py），selector 信息内嵌到 extract_content.py
+- 🔧 更新依赖声明为当前环境实际使用的 skill
+- 🔧 修复 type annotation 和 bare except 问题
 
 ### v1.1.0 (2026-03-14)
 - ✅ 添加去重机制（本地缓存 + 文档检查）
@@ -226,8 +252,3 @@ apt-get install tesseract-ocr tesseract-ocr-chi-sim
 ### v1.0.0 (2026-03-14)
 - 初始版本
 - 支持 X/Twitter、即刻、微信公众号
-- 每日定时提醒
-
----
-
-*由 OpenClaw 自动生成 | 版本 1.1.0*

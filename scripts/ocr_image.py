@@ -108,18 +108,10 @@ def ocr_image(image_path: str) -> dict:
         except Exception as e:
             result['error'] = f'Tesseract OCR 失败: {str(e)}'
     
-    # 方法 2: 使用腾讯云 CI OCR (如果配置了)
-    # 检查是否有腾讯云 COS 技能配置
-    cos_config_path = '/root/.openclaw/workspace/skills/tencent-cos-skill/config.json'
-    if os.path.exists(cos_config_path) and not result['success']:
-        try:
-            with open(cos_config_path, 'r') as f:
-                config = json.load(f)
-            if config.get('secret_id') and config.get('secret_key'):
-                result['note'] = '检测到腾讯云配置，可使用 CI OCR API'
-                result['tencent_ci_available'] = True
-        except:
-            pass
+    # 方法 2: 提示 Agent 可使用外部 OCR 服务
+    # 不再硬编码特定路径，由 Agent 根据当前环境选择 OCR 方案
+    if not result['success']:
+        result['note'] = '本地 Tesseract 不可用，可使用以下外部 OCR 方案'
     
     # 方法 3: 返回图片路径，供 Agent 使用外部 OCR
     if not result['success']:
