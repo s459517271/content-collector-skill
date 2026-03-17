@@ -25,9 +25,10 @@ PLATFORM_RULES = {
     'weixin': {
         'domains': ['mp.weixin.qq.com'],
         'label': '微信公众号',
-        'skill': 'defuddle',
-        'fallback_skills': ['baoyu-url-to-markdown'],
-        'note': '优先使用 defuddle 提取正文，fallback 到 baoyu-url-to-markdown',
+        'skill': 'web-content-fetcher',
+        'fallback_skills': ['defuddle'],
+        'note': '使用 web-content-fetcher (Scrapling) 提取正文，完美绕过微信反爬',
+        'scrapling_command': 'python3 ~/.openclaw/workspace/skills/web-content-fetcher/scripts/fetch.py "{url}" 50000',
         'selectors': {
             'title': '#activity-name, .rich_media_title',
             'author': '#js_name, .profile_nickname',

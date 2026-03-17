@@ -1,7 +1,7 @@
 ---
 name: content-collector
 description: "自动收集社交媒体内容（X/Twitter、即刻、公众号、Reddit 等）并整理成结构化笔记存入飞书文档。当用户发送链接或截图时使用此技能。"
-version: "1.2.0"
+version: "1.3.0"
 ---
 
 # Content Collector - 社交内容收藏助手
@@ -32,6 +32,7 @@ version: "1.2.0"
 | Skill | 用途 | 安装位置 |
 |:---|:---|:---|
 | **x-tweet-fetcher** | X/Twitter 推文、文章、时间线提取（零依赖 FxTwitter API） | `~/.opencode/skills/x-tweet-fetcher/` |
+| **web-content-fetcher** | 微信公众号抓取（Scrapling 方案，完美绕过反爬） | `~/.openclaw/workspace/skills/web-content-fetcher/` |
 | **baoyu-url-to-markdown** | 通用 URL 转 Markdown（fallback 方案） | `~/.opencode/skills/baoyu-url-to-markdown/` |
 
 ### 可选 Skill
@@ -85,7 +86,7 @@ python3 scripts/extract_content.py "https://x.com/user/status/123"
 | 平台 | 域名 | 首选 Skill | Fallback |
 |:---|:---|:---|:---|
 | X/Twitter | x.com, twitter.com | x-tweet-fetcher | — |
-| 微信公众号 | mp.weixin.qq.com | defuddle | baoyu-url-to-markdown |
+| 微信公众号 | mp.weixin.qq.com | **web-content-fetcher (Scrapling)** | defuddle |
 | 即刻 | okjike.com, jike.cn | defuddle | baoyu-url-to-markdown |
 | Reddit | reddit.com | defuddle | baoyu-url-to-markdown |
 | Hacker News | news.ycombinator.com | defuddle | — |
@@ -235,6 +236,11 @@ python3 scripts/ocr_image.py /path/to/image.png
 每天 18:00 推送当日收藏数量、标题列表和文档链接。
 
 ## 更新日志
+
+### v1.3.0 (2026-03-17)
+- 🎉 **微信公众号抓取能力升级**：改用 Scrapling 方案，完美绕过微信反爬
+- 🔧 更新平台映射：微信公众号首选 web-content-fetcher skill
+- 🔧 添加 scrapling_command 字段，直接输出抓取命令
 
 ### v1.2.0 (2026-03-14)
 - 🔧 移除所有硬编码路径，适配多环境部署
