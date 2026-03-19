@@ -36,9 +36,9 @@ import urllib.request
 import urllib.error
 
 
-# 默认配置（从 MEMORY.md）
-DEFAULT_APP_TOKEN = "ND8ObCuSya5Dv3sREZYc03Ilngh"
-DEFAULT_TABLE_ID = "tblaHDM5kjtikIl9"
+# 默认配置（从环境变量读取）
+DEFAULT_APP_TOKEN = os.environ.get("FEISHU_BITABLE_APP_TOKEN", "")
+DEFAULT_TABLE_ID = os.environ.get("FEISHU_BITABLE_TABLE_ID", "")
 
 # 飞书 API 配置
 FEISHU_API_BASE = "https://open.feishu.cn/open-apis"

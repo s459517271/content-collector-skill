@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Deduplication - 检查链接是否已存在
-支持：飞书文档内容检查、本地缓存检查
+支持：飞书多维表格检查、本地缓存检查
 """
 
 import json
@@ -38,6 +38,10 @@ SHORT_URL_DOMAINS = {'t.co', 'bit.ly', 'tinyurl.com', 'goo.gl', 'ow.ly', 'is.gd'
 
 # 缓存文件路径
 CACHE_FILE = os.path.join(os.path.dirname(__file__), '..', '.cache', 'collected_urls.json')
+
+# 多维表格配置（从环境变量读取，或使用默认值）
+BITABLE_APP_TOKEN = os.environ.get('FEISHU_BITABLE_APP_TOKEN') or os.environ.get('BITABLE_APP_TOKEN', '')
+BITABLE_TABLE_ID = os.environ.get('FEISHU_BITABLE_TABLE_ID') or os.environ.get('BITABLE_TABLE_ID', '')
 
 # 缓存策略
 CACHE_TTL_DAYS = 30       # 缓存条目 30 天后过期
@@ -186,8 +190,20 @@ def main():
     import sys
     
     if len(sys.argv) < 2:
-        print("Usage: python3 deduplicate.py <url> [doc_content_file]", file=sys.stderr)
+        print("Usage:", file=sys.stderr)
+        print("  python3 deduplicate.py <url>              # 检查是否重复", file=sys.stderr)
+        print("  python3 deduplicate.py --add <url>        # 添加到缓存", file=sys.stderr)
         sys.exit(1)
+    
+    # 支持 --add 参数
+    if sys.argv[1] == '--add':
+        if len(sys.argv) < 3:
+            print("Error: --add requires a URL", file=sys.stderr)
+            sys.exit(1)
+        url = sys.argv[2]
+        add_to_cache(url)
+        print(json.dumps({'success': True, 'message': f'已添加到缓存: {url}'}, ensure_ascii=False))
+        return
     
     url = sys.argv[1]
     doc_content = None
