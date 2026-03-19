@@ -2,6 +2,10 @@
 
 自动收集社交媒体内容 → AI 整理 → 存入飞书多维表格。
 
+<p align="center">
+  <img src="assets/cover.png" alt="一键收藏总结提醒" width="600">
+</p>
+
 ## 特性
 
 - 🚀 **多平台支持**：X/Twitter、微信公众号、即刻、Reddit、知乎、Bilibili、Hacker News
@@ -9,6 +13,21 @@
 - 🤖 **AI 智能整理**：自动摘要、分类、关键词提取
 - 📝 **飞书集成**：存入飞书云空间 + 多维表格
 - 🔄 **去重机制**：避免重复收藏
+
+## 效果展示
+
+<p align="center">
+  <img src="assets/chat-demo.png" alt="聊天记录-机器人收藏" width="400">
+  <img src="assets/bitable-demo.png" alt="内容收藏库-多维表格" width="400">
+</p>
+
+## 工作流程
+
+<p align="center">
+  <img src="assets/workflow.png" alt="自动化流程" width="500">
+</p>
+
+**丢链接 → 读内容 → 提重点 → 分类/打标签 → 存飞书 → 发通知**
 
 ## 快速开始
 
@@ -70,6 +89,8 @@ export FEISHU_BITABLE_TABLE_ID="your_table_id"
 ```
 content-collector/
 ├── SKILL.md              # 主文件
+├── README.md             # 说明文档
+├── assets/               # 图片资源
 ├── scripts/              # 辅助脚本
 │   ├── extract_content.py    # 平台检测
 │   ├── deduplicate.py        # URL 去重
