@@ -230,7 +230,7 @@ feishu_bitable_app_table_record(
 - `原文文件` - 飞书云空间文件链接（URL类型）
 - `标签` - 5个标签数组
 
-**Complete flow (v1.5+)**:
+**Complete flow (v2.0)**:
 
 1. **Extract content** using platform-specific skill (x-tweet-fetcher, web-content-fetcher, etc.)
 2. **Generate summary** - AI summarize the content
@@ -260,6 +260,12 @@ feishu_bitable_app_table_record(
    ```
 
 **Important**: Always save BOTH `原文链接` (original URL) and `原文文件` (Feishu Drive backup). This ensures content remains accessible even if the original link becomes unavailable.
+
+**Changelog v2.0 (2026-03-29)**:
+- ✅ **Fixed**: `save_to_bitable.py` now uploads files to Feishu Drive before creating records
+- ✅ **Added**: `upload_file_to_feishu()` function handles file upload with proper multipart/form-data
+- ✅ **Changed**: Records now include `原文文件` field with cloud storage URL instead of inline content
+- ⚠️ **Note**: Previous versions missed the upload step, causing empty `原文文件` fields
 
 **Bitable config**: See `references/feishu_config.md` or use environment variables:
 - `FEISHU_BITABLE_APP_TOKEN`

@@ -96,6 +96,79 @@ def call_feishu_api(
         raise Exception(f"HTTP {e.code}: {error_body}")
 
 
+def upload_file_to_feishu(
+    file_path: str,
+    token: str,
+    parent_token: str = "nodcnCk8EyTpvvn9plx0OLTdSlg",
+) -> dict:
+    """上传文件到飞书云空间"""
+    import mimetypes
+    
+    file_name = os.path.basename(file_path)
+    file_size = os.path.getsize(file_path)
+    mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+    
+    # 1. 获取上传凭证
+    path = "/drive/v1/files/upload_prepare"
+    body = {
+        "file_name": file_name,
+        "size": file_size,
+        "parent_type": "explorer",
+        "parent_node": parent_token,
+    }
+    
+    prepare_result = call_feishu_api("POST", path, token, body)
+    upload_ticket = prepare_result.get("upload_ticket")
+    
+    # 2. 上传文件内容
+    upload_url = f"{FEISHU_API_BASE}/drive/v1/files/upload_content"
+    
+    with open(file_path, "rb") as f:
+        file_data = f.read()
+    
+    # 构造 multipart/form-data 请求
+    import io
+    import uuid
+    
+    boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
+    
+    # 构建请求体
+    body_parts = []
+    body_parts.append(f"--{boundary}\r\n".encode())
+    body_parts.append(f'Content-Disposition: form-data; name="upload_ticket"\r\n\r\n'.encode())
+    body_parts.append(f"{upload_ticket}\r\n".encode())
+    
+    body_parts.append(f"--{boundary}\r\n".encode())
+    body_parts.append(f'Content-Disposition: form-data; name="file"; filename="{file_name}"\r\n'.encode())
+    body_parts.append(f"Content-Type: {mime_type}\r\n\r\n".encode())
+    body_parts.append(file_data)
+    body_parts.append(b"\r\n")
+    
+    body_parts.append(f"--{boundary}--\r\n".encode())
+    
+    data = b"".join(body_parts)
+    
+    req = urllib.request.Request(
+        upload_url,
+        data=data,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+        method="POST",
+    )
+    
+    try:
+        with urllib.request.urlopen(req, timeout=60) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            if result.get("code") != 0:
+                raise Exception(f"Upload error: {result.get('msg', result)}")
+            return result.get("data", {})
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8")
+        raise Exception(f"Upload HTTP {e.code}: {error_body}")
+
+
 def save_to_bitable(
     app_token: str,
     table_id: str,
@@ -105,17 +178,33 @@ def save_to_bitable(
     category: str,
     url: str,
     content: str,
+    content_file: str = None,
 ) -> dict:
     """保存内容到多维表格"""
+    
+    # 上传文件到云空间（如果提供了文件路径）
+    file_url = None
+    if content_file and os.path.exists(content_file):
+        try:
+            upload_result = upload_file_to_feishu(content_file, token)
+            file_token = upload_result.get("file_token")
+            if file_token:
+                file_url = f"https://my.feishu.cn/file/{file_token}"
+        except Exception as e:
+            print(f"⚠️ 文件上传失败: {e}", file=sys.stderr)
     
     # 构建记录字段
     fields = {
         "标题": title,
         "来源": source,
         "分类": category,
-        "原文链接": url,
-        "原文内容": content,
+        "原文链接": {"text": "查看原文", "link": url},
+        "摘要内容": content[:2000] if len(content) > 2000 else content,  # 摘要限制长度
     }
+    
+    # 如果有文件URL，添加到原文文件字段
+    if file_url:
+        fields["原文文件"] = {"text": "查看完整内容", "link": file_url}
     
     # 调用 API 创建记录
     path = f"/bitable/v1/apps/{app_token}/tables/{table_id}/records"
@@ -233,6 +322,7 @@ def main():
                 category=args.category,
                 url=args.url,
                 content=content,
+                content_file=str(content_path),
             )
             
             output = {
